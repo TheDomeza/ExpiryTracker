@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #fcfcfc; /* พื้นหลังเขียวอ่อน */
+  font-family: 'Prompt', sans-serif; /* แนะนำให้หา Font Thai มาใส่ ถ้าไม่มีจะใช้ Default */
+}
