@@ -1,21 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { Bell, Calendar, Hourglass, CheckSquare, Trash2, Edit, Plus, RefreshCw, X, Search, Filter, ArrowLeft, AlertTriangle } from 'lucide-react';
-
-// --- ข้อมูลจำลอง (Mock Data) ---
-// ย้ายออกมาข้างนอกเพื่อให้ทั้ง 2 หน้าใช้ข้อมูลชุดเดียวกัน (ในโปรเจกต์จริงควรใช้ Context หรือ Redux)
-const INITIAL_ITEMS = [
-  { id: 1, name: "นมสดพาสเจอร์ไรซ์", category: "เครื่องดื่ม", expiryDate: "2023-12-01" },
-  { id: 2, name: "ขนมปังโฮลวีต", category: "อาหาร", expiryDate: "2023-12-05" },
-  { id: 3, name: "เนื้อไก่สด", category: "อาหาร", expiryDate: "2023-12-15" },
-  { id: 6, name: "ไข่ไก่", category: "อาหาร", expiryDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0] }, 
-  { id: 7, name: "ผักสลัด", category: "อาหาร", expiryDate: new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0] },
-  { id: 11, name: "ข้าวหอมมะลิ", category: "อาหาร", expiryDate: "2026-05-20" },
-  { id: 14, name: "ยาสีฟัน", category: "ของใช้", expiryDate: "2026-08-10" },
-];
 
 // --- Helper Functions ---
 const getDaysRemaining = (dateString) => {
+  if (!dateString) return 0;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const expiry = new Date(dateString);
@@ -32,10 +21,9 @@ const getStatus = (days) => {
 // ==========================================
 // 1. Component: หน้าหลัก (Home Page)
 // ==========================================
-function HomePage({ items, setItems }) {
-  const navigate = useNavigate(); // ใช้สำหรับเปลี่ยนหน้า
+function HomePage({ items, setItems, fetchItems }) {
+  const navigate = useNavigate();
   const [form, setForm] = useState({ name: '', category: '', expiryDate: '' });
-  const [isEditing, setIsEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -50,28 +38,53 @@ function HomePage({ items, setItems }) {
     good: items.filter(i => getStatus(getDaysRemaining(i.expiryDate)) === 'good').length,
   };
 
-  // Handlers
-  const handleSubmit = (e) => {
+  // ---------------------------------------------------------
+  // 🟢 [REST API]: ฟังก์ชัน POST Method (เพิ่มข้อมูลลง Database)
+  // ---------------------------------------------------------
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const formData = { ...form, category: form.category || categoriesList[0] };
-    if (isEditing) {
-      setItems(items.map(item => item.id === isEditing ? { ...formData, id: isEditing } : item));
-      setIsEditing(null);
-    } else {
-      setItems([...items, { ...formData, id: Date.now() }]);
+    
+    try {
+      // เรียกใช้ API POST
+      const response = await fetch('http://localhost:8080/api/items', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData), // แปลงข้อมูลฟอร์มเป็น JSON ส่งไปให้ Java
+      });
+
+      if (response.ok) {
+        const newItem = await response.json();
+        setItems([...items, newItem]); // อัปเดตหน้าจอทันที
+        setForm({ name: '', category: '', expiryDate: '' }); // ล้างฟอร์ม
+        setShowForm(false);
+      } else {
+        alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      }
+    } catch (error) {
+      console.error("Error posting data:", error);
+      alert('ไม่สามารถติดต่อ Server ได้ (เช็คว่ารัน gradle bootRun หรือยัง)');
     }
-    setForm({ name: '', category: '', expiryDate: '' });
-    setShowForm(false);
   };
 
-  const handleDelete = (id) => {
-    if(window.confirm("ยืนยันการลบรายการนี้?")) setItems(items.filter(item => item.id !== id));
-  };
-
-  const handleEdit = (item) => {
-    setForm(item);
-    setIsEditing(item.id);
-    setShowForm(true);
+  // ---------------------------------------------------------
+  // 🔴 [REST API]: ฟังก์ชัน DELETE Method (ลบข้อมูลจาก Database)
+  // ---------------------------------------------------------
+  const handleDelete = async (id) => {
+    if(window.confirm("ยืนยันการลบรายการนี้?")) {
+      try {
+        const response = await fetch(`http://localhost:8080/api/items/${id}`, {
+          method: 'DELETE',
+        });
+        if (response.ok) {
+          setItems(items.filter(item => item.id !== id));
+        }
+      } catch (error) {
+        console.error("Error deleting data:", error);
+      }
+    }
   };
 
   const filteredItems = items.filter(item => {
@@ -84,7 +97,6 @@ function HomePage({ items, setItems }) {
 
   return (
     <div className="min-h-screen bg-[#A8D5BA] font-sans pb-10">
-      {/* Header */}
       <header className="bg-[#114B30] text-white p-4 flex justify-between items-center shadow-lg sticky top-0 z-20">
         <div className="flex items-center gap-3">
           <div className="bg-white p-1.5 rounded-lg text-[#114B30] shadow-sm">
@@ -92,7 +104,6 @@ function HomePage({ items, setItems }) {
           </div>
           <h1 className="text-xl md:text-2xl font-bold">Expiry Tracker</h1>
         </div>
-        {/* ปุ่มกระดิ่ง: กดแล้วไปหน้า Notifications */}
         <button onClick={() => navigate('/notifications')} className="relative p-2 hover:bg-[#2E7D32] rounded-full transition cursor-pointer">
           <Bell className="w-6 h-6" />
           {stats.soon > 0 && (
@@ -106,41 +117,22 @@ function HomePage({ items, setItems }) {
       <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
         {/* Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Card Expired */}
-          <div onClick={() => setFilterStatus(filterStatus === 'expired' ? 'all' : 'expired')}
-            className={`cursor-pointer flex flex-col items-center justify-center p-6 rounded-lg border-4 bg-[#FFADAD] border-[#FF5252] text-[#B71C1C] h-[180px] transition-transform hover:scale-[1.02] ${filterStatus === 'expired' ? 'ring-4 ring-white shadow-xl' : 'shadow-md'}`}>
+          <div onClick={() => setFilterStatus(filterStatus === 'expired' ? 'all' : 'expired')} className={`cursor-pointer flex flex-col items-center justify-center p-6 rounded-lg border-4 bg-[#FFADAD] border-[#FF5252] text-[#B71C1C] h-[180px] transition-transform hover:scale-[1.02] ${filterStatus === 'expired' ? 'ring-4 ring-white shadow-xl' : 'shadow-md'}`}>
             <div className="bg-white/40 p-3 rounded-full mb-3"><Calendar size={32} className="text-[#B71C1C]" /></div>
             <h2 className="text-2xl font-bold mb-1">หมดอายุแล้ว</h2>
             <p className="text-lg font-medium">{stats.expired} รายการ</p>
           </div>
-          {/* Card Soon */}
-          <div onClick={() => setFilterStatus(filterStatus === 'soon' ? 'all' : 'soon')}
-            className={`cursor-pointer flex flex-col items-center justify-center p-6 rounded-lg border-4 bg-[#FFF59D] border-[#FBC02D] text-[#7F6000] h-[180px] transition-transform hover:scale-[1.02] ${filterStatus === 'soon' ? 'ring-4 ring-white shadow-xl' : 'shadow-md'}`}>
+          <div onClick={() => setFilterStatus(filterStatus === 'soon' ? 'all' : 'soon')} className={`cursor-pointer flex flex-col items-center justify-center p-6 rounded-lg border-4 bg-[#FFF59D] border-[#FBC02D] text-[#7F6000] h-[180px] transition-transform hover:scale-[1.02] ${filterStatus === 'soon' ? 'ring-4 ring-white shadow-xl' : 'shadow-md'}`}>
             <div className="bg-white/40 p-3 rounded-full mb-3"><Hourglass size={32} className="text-[#7F6000]" /></div>
             <h2 className="text-2xl font-bold mb-1">ใกล้หมดอายุ</h2>
             <p className="text-lg font-medium">{stats.soon} รายการ</p>
           </div>
-          {/* Card Good */}
-          <div onClick={() => setFilterStatus(filterStatus === 'good' ? 'all' : 'good')}
-            className={`cursor-pointer flex flex-col items-center justify-center p-6 rounded-lg border-4 bg-[#A5D6A7] border-[#43A047] text-[#1B5E20] h-[180px] transition-transform hover:scale-[1.02] ${filterStatus === 'good' ? 'ring-4 ring-white shadow-xl' : 'shadow-md'}`}>
+          <div onClick={() => setFilterStatus(filterStatus === 'good' ? 'all' : 'good')} className={`cursor-pointer flex flex-col items-center justify-center p-6 rounded-lg border-4 bg-[#A5D6A7] border-[#43A047] text-[#1B5E20] h-[180px] transition-transform hover:scale-[1.02] ${filterStatus === 'good' ? 'ring-4 ring-white shadow-xl' : 'shadow-md'}`}>
             <div className="bg-white/40 p-3 rounded-full mb-3"><CheckSquare size={32} className="text-[#1B5E20]" /></div>
             <h2 className="text-2xl font-bold mb-1">ยังใช้งานได้</h2>
             <p className="text-lg font-medium">{stats.good} รายการ</p>
           </div>
         </div>
-
-        {/* Filter Indicator */}
-        {filterStatus !== 'all' && (
-          <div className="flex justify-center">
-             <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-md">
-                <span className="text-sm text-gray-600">แสดงเฉพาะ:</span>
-                <span className={`font-bold px-2 py-0.5 rounded text-sm ${filterStatus === 'expired' ? 'bg-red-100 text-red-700' : filterStatus === 'soon' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
-                  {filterStatus === 'expired' ? 'หมดอายุแล้ว' : filterStatus === 'soon' ? 'ใกล้หมดอายุ' : 'ยังใช้งานได้'}
-                </span>
-                <button onClick={() => setFilterStatus('all')}><X size={14} /></button>
-             </div>
-          </div>
-        )}
 
         {/* List Section */}
         <div className="bg-[#F5F5F5] rounded-xl shadow-lg p-6 min-h-[500px]">
@@ -155,12 +147,16 @@ function HomePage({ items, setItems }) {
                    <option value="ทั้งหมด">หมวดหมู่ทั้งหมด</option>
                    {categoriesList.map((cat, idx) => <option key={idx} value={cat}>{cat}</option>)}
                  </select>
-                 <Filter size={16} className="absolute right-3 top-2.5 text-white pointer-events-none" />
                </div>
              </div>
-             <button onClick={() => setShowForm(!showForm)} className="bg-[#0277BD] text-white px-6 py-2 rounded-md flex items-center gap-2 hover:bg-[#01579B] transition shadow-md">
-               <Plus size={20} /> เพิ่มรายการ
-             </button>
+             <div className="flex gap-2">
+               <button onClick={fetchItems} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 transition" title="รีเฟรชข้อมูล">
+                 <RefreshCw size={20} />
+               </button>
+               <button onClick={() => setShowForm(!showForm)} className="bg-[#0277BD] text-white px-6 py-2 rounded-md flex items-center gap-2 hover:bg-[#01579B] transition shadow-md">
+                 <Plus size={20} /> เพิ่มรายการ
+               </button>
+             </div>
            </div>
            
            {/* Form (Show/Hide) */}
@@ -188,12 +184,16 @@ function HomePage({ items, setItems }) {
                        <td className="py-3 px-2"><span className="bg-gray-200 px-2 py-1 rounded text-sm">{item.category}</span></td>
                        <td className="py-3 px-2">{item.expiryDate}</td>
                        <td className="py-3 px-2 text-center"><span className={`px-3 py-1 rounded-full text-xs font-bold ${statusClass}`}>{days < 0 ? `หมดอายุ (${Math.abs(days)} วัน)` : `${days} วัน`}</span></td>
-                       <td className="py-3 px-2 text-center flex justify-center gap-2"><button onClick={() => handleEdit(item)} className="text-blue-500"><Edit size={18}/></button><button onClick={() => handleDelete(item.id)} className="text-red-500"><Trash2 size={18}/></button></td>
+                       <td className="py-3 px-2 text-center flex justify-center gap-2">
+                         {/* ปิดปุ่ม Edit ไว้ก่อนเนื่องจาก Backend ยังไม่ได้ทำ PUT Method */}
+                         <button onClick={() => handleDelete(item.id)} className="text-red-500"><Trash2 size={18}/></button>
+                       </td>
                      </tr>
                    )
                  })}
                </tbody>
              </table>
+             {items.length === 0 && <div className="text-center py-10 text-gray-500">กำลังโหลดข้อมูล หรือ ไม่มีข้อมูลในระบบ...</div>}
            </div>
         </div>
       </div>
@@ -206,89 +206,68 @@ function HomePage({ items, setItems }) {
 // ==========================================
 function NotificationPage({ items }) {
   const navigate = useNavigate();
-  
-  // กรองเฉพาะรายการที่ "หมดอายุ" หรือ "ใกล้หมด"
-  const alertItems = items.filter(item => {
-    const days = getDaysRemaining(item.expiryDate);
-    return days <= 7; // น้อยกว่า 7 วัน (รวมถึงติดลบคือหมดอายุ)
-  }).sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate)); // เรียงตามวันหมดอายุ
+  const alertItems = items.filter(item => getDaysRemaining(item.expiryDate) <= 7).sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
 
   return (
     <div className="min-h-screen bg-[#FFF8E1] font-sans">
-      {/* Header Notification */}
       <header className="bg-[#E65100] text-white p-4 flex items-center shadow-lg sticky top-0 z-20">
-        <button onClick={() => navigate('/')} className="mr-4 p-2 hover:bg-white/20 rounded-full transition">
-          <ArrowLeft size={24} />
-        </button>
-        <div className="flex items-center gap-2">
-           <Bell size={24} />
-           <h1 className="text-xl font-bold">การแจ้งเตือน</h1>
-        </div>
+        <button onClick={() => navigate('/')} className="mr-4 p-2 hover:bg-white/20 rounded-full transition"><ArrowLeft size={24} /></button>
+        <div className="flex items-center gap-2"><Bell size={24} /><h1 className="text-xl font-bold">การแจ้งเตือน</h1></div>
       </header>
-
       <div className="max-w-3xl mx-auto p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-          <AlertTriangle className="text-orange-600" />
-          รายการที่ต้องรีบจัดการ ({alertItems.length})
-        </h2>
-
-        {alertItems.length === 0 ? (
-          <div className="text-center py-20 text-gray-400 bg-white rounded-lg shadow-sm border border-dashed border-gray-300">
-             <CheckSquare size={48} className="mx-auto mb-4 opacity-30 text-green-500" />
-             <p className="text-lg">ไม่มีรายการแจ้งเตือน</p>
-             <p className="text-sm">สินค้าทุกชิ้นยังอยู่ในสภาพดี</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {alertItems.map(item => {
-              const days = getDaysRemaining(item.expiryDate);
-              const isExpired = days < 0;
-              
-              return (
-                <div key={item.id} className={`p-4 rounded-lg shadow-sm border-l-4 flex justify-between items-center bg-white ${isExpired ? 'border-red-500' : 'border-yellow-500'}`}>
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-800">{item.name}</h3>
-                    <p className="text-sm text-gray-500">หมวดหมู่: {item.category}</p>
-                    <p className={`text-sm font-semibold mt-1 ${isExpired ? 'text-red-600' : 'text-yellow-700'}`}>
-                       {isExpired ? `หมดอายุไปแล้ว ${Math.abs(days)} วัน` : `กำลังจะหมดอายุในอีก ${days} วัน`}
-                    </p>
-                  </div>
-                  <div className={`px-3 py-2 rounded-lg text-center min-w-[80px] ${isExpired ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                    <span className="block text-xs font-bold uppercase">EXP</span>
-                    <span className="block text-sm font-mono">{item.expiryDate}</span>
-                  </div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2"><AlertTriangle className="text-orange-600" /> รายการที่ต้องรีบจัดการ ({alertItems.length})</h2>
+        <div className="space-y-4">
+          {alertItems.map(item => {
+            const days = getDaysRemaining(item.expiryDate);
+            const isExpired = days < 0;
+            return (
+              <div key={item.id} className={`p-4 rounded-lg shadow-sm border-l-4 flex justify-between items-center bg-white ${isExpired ? 'border-red-500' : 'border-yellow-500'}`}>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">{item.name}</h3>
+                  <p className="text-sm text-gray-500">หมวดหมู่: {item.category}</p>
+                  <p className={`text-sm font-semibold mt-1 ${isExpired ? 'text-red-600' : 'text-yellow-700'}`}>{isExpired ? `หมดอายุไปแล้ว ${Math.abs(days)} วัน` : `กำลังจะหมดอายุในอีก ${days} วัน`}</p>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div className={`px-3 py-2 rounded-lg text-center min-w-[80px] ${isExpired ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                  <span className="block text-xs font-bold uppercase">EXP</span><span className="block text-sm font-mono">{item.expiryDate}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
 
 // ==========================================
-// 3. Main App Container (Routing Setup)
+// 3. Main App Container (เชื่อมต่อ API)
 // ==========================================
 function App() {
-  // State หลักอยู่ที่นี่ เพื่อส่งไปให้ทั้ง 2 หน้า
-  const [items, setItems] = useState(INITIAL_ITEMS);
+  const [items, setItems] = useState([]); // เริ่มต้นเป็น Array ว่างๆ
 
-  // Notification System (Browser API)
-  useEffect(() => {
-    if ("Notification" in window) {
-       Notification.requestPermission();
-       const expiringCount = items.filter(i => getDaysRemaining(i.expiryDate) <= 7 && getDaysRemaining(i.expiryDate) >= 0).length;
-       if (expiringCount > 0 && Notification.permission === "granted") {
-          new Notification("แจ้งเตือน!", { body: `มี ${expiringCount} รายการใกล้หมดอายุ` });
-       }
+  // ---------------------------------------------------------
+  // 🔵 [REST API]: ฟังก์ชัน GET Method (ดึงข้อมูลตอนเปิดเว็บ)
+  // ---------------------------------------------------------
+  const fetchItems = async () => {
+    try {
+      // เรียกใช้ API GET
+      const response = await fetch('http://localhost:8080/api/items');
+      const data = await response.json();
+      setItems(data); // นำข้อมูลที่ได้จาก Spring Boot มาใส่ในหน้าจอ
+    } catch (error) {
+      console.error("Error fetching data:", error);
     }
-  }, [items]);
+  };
+
+  // ใช้ useEffect เพื่อสั่งให้ดึงข้อมูล 1 ครั้ง ตอนเปิดเว็บมาครั้งแรก
+  useEffect(() => {
+    fetchItems();
+  }, []);
 
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<HomePage items={items} setItems={setItems} />} />
+        <Route path="/" element={<HomePage items={items} setItems={setItems} fetchItems={fetchItems} />} />
         <Route path="/notifications" element={<NotificationPage items={items} />} />
       </Routes>
     </Router>
